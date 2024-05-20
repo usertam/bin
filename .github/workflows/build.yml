@@ -1,0 +1,73 @@
+name: "Build"
+on:
+  workflow_dispatch:
+  push:
+    branches:
+    - master
+permissions:
+  contents: write
+jobs:
+  configure:
+    name: Configure build matrix
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{steps.attr.outputs.release}}
+      systems: ${{steps.attr.outputs.systems}}
+      packages: ${{steps.attr.outputs.packages}}
+      matrix: ${{steps.attr.outputs.matrix}}
+    steps:
+    - uses: actions/checkout@main
+    - uses: DeterminateSystems/nix-installer-action@main
+    - name: Get build attributes
+      id: attr
+      run: |
+        PREV=$(curl -H 'authorization: Bearer ${{secrets.GITHUB_TOKEN}}' -s "https://api.github.com/repos/${{github.repository}}/releases" | jq -r '.[0].tag_name')
+        if [ "$PREV" = "null" ]; then PREV="r0"; fi
+        echo "release=r$((${PREV#r} + 1))" | tee -a "$GITHUB_OUTPUT"
+        SYSTEMS=$(nix eval --apply 'builtins.attrNames' .#packages | sed 's/" "/", "/g')
+        echo "systems=$SYSTEMS" | tee -a "$GITHUB_OUTPUT"
+        PACKAGES=$(nix eval --apply 'builtins.attrNames' .#packages.x86_64-linux | sed 's/" "/", "/g')
+        echo "packages=$PACKAGES" | tee -a "$GITHUB_OUTPUT"
+        MATRIX=$(jq -nc --argjson args "$PACKAGES" '[$args[] | {package: .}] as $pkgs | {include: [inputs[] | . as $system | $pkgs[] | . + $system]}' .github/workflows/build-matrix.json)
+        echo "matrix=$MATRIX" | tee -a "$GITHUB_OUTPUT"
+  build:
+    needs: configure
+    strategy:
+      matrix: ${{fromJson(needs.configure.outputs.matrix)}}
+      fail-fast: false
+    name: Build ${{matrix.package}}.${{matrix.system}}
+    runs-on: ${{matrix.runs-on}}
+    steps:
+    - uses: actions/checkout@main
+    - uses: DeterminateSystems/nix-installer-action@main
+      with:
+        extra-conf: |
+          extra-platforms = aarch64-darwin aarch64-linux x86_64-darwin x86_64-linux
+          allowed-impure-host-deps = /bin/sh
+    - uses: DeterminateSystems/magic-nix-cache-action@main
+    - name: Install emulation support for ubuntu-latest
+      if: matrix.system == 'aarch64-linux' && matrix.runs-on == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y binfmt-support qemu-user-static
+    - name: Build ${{matrix.package}}.${{matrix.system}}
+      continue-on-error: true
+      id: build
+      run: |
+        nix build .#packages.${{matrix.system}}.${{matrix.package}}
+        MAIN=$(nix eval --raw .#packages.${{matrix.system}}.${{matrix.package}}.meta.mainProgram || echo ${{matrix.package}})
+        cp -a $(realpath "result/bin/$MAIN") ${{matrix.package}}.${{matrix.system}}
+    - name: Error log for ${{matrix.package}}.${{matrix.system}}
+      if: steps.build.outcome != 'success'
+      run: |
+        nix build --print-build-logs .#packages.${{matrix.system}}.${{matrix.package}}
+    - uses: actions/upload-artifact@master
+      if: steps.build.outcome == 'success'
+      with:
+        name: ${{matrix.package}}.${{matrix.system}}
+        path: ${{matrix.package}}.${{matrix.system}}
+    - uses: softprops/action-gh-release@master
+      if: steps.build.outcome == 'success'
+      with:
+        tag_name: ${{needs.configure.outputs.release}}
+        files: ${{matrix.package}}.${{matrix.system}}
