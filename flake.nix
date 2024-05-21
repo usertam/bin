@@ -8,7 +8,15 @@
     overrideAllPkgs = pkgsWith: forAllPkgs (pkgs: pkgsWith pkgs.pkgsStatic.pkgsLLVM);
   in {
     packages = overrideAllPkgs (pkgs: {
-      socat = pkgs.hello;
+      bash = pkgs.bash;
+      coreutils = pkgs.coreutils;
+      git = pkgs.gitMinimal;
+      hello = pkgs.hello;
+      nano = pkgs.nano;
+      nix = pkgs.nixVersions.git;
+      rsync = pkgs.rsync;
+      socat = pkgs.socat;
+      zsh = pkgs.zsh;
     });
   };
 }
