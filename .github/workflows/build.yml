@@ -18,6 +18,7 @@ jobs:
     steps:
     - uses: actions/checkout@main
     - uses: DeterminateSystems/nix-installer-action@main
+    - uses: DeterminateSystems/magic-nix-cache-action@main
     - name: Get build attributes
       id: attr
       run: |
@@ -30,6 +31,11 @@ jobs:
         echo "packages=$PACKAGES" | tee -a "$GITHUB_OUTPUT"
         MATRIX=$(jq -nc --argjson args "$PACKAGES" '[$args[] | {package: .}] as $pkgs | {include: [inputs[] | . as $system | $pkgs[] | . + $system]}' .github/workflows/build-matrix.json)
         echo "matrix=$MATRIX" | tee -a "$GITHUB_OUTPUT"
+    - name: Build hello.x86_64-linux and sanity check
+      run: |
+        nix build .#packages.x86_64-linux.hello
+        file result/bin/hello | tee >&2 | grep -q 'static.* linked'
+        readelf -p .comment result/bin/hello | tee >&2 | grep -q 'clang'
   build:
     needs: configure
     strategy:
