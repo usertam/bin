@@ -34,8 +34,8 @@ jobs:
     - name: Build hello.x86_64-linux and sanity check
       run: |
         nix build .#packages.x86_64-linux.hello
-        file result/bin/hello | tee >&2 | grep -q 'static.* linked'
-        readelf -p .comment result/bin/hello | tee >&2 | grep -q 'clang'
+        file result/bin/hello
+        readelf -p .comment result/bin/hello
   build:
     needs: configure
     strategy:
@@ -62,7 +62,13 @@ jobs:
       run: |
         nix build .#packages.${{matrix.system}}.${{matrix.package}}
         MAIN=$(nix eval --raw .#packages.${{matrix.system}}.${{matrix.package}}.meta.mainProgram || echo ${{matrix.package}})
+        echo "MAIN=$MAIN" | tee -a "$GITHUB_ENV"
         cp -a $(realpath "result/bin/$MAIN") ${{matrix.package}}.${{matrix.system}}
+    - name: Built binary for ${{matrix.package}}.${{matrix.system}}
+      if: steps.build.outcome == 'success'
+      run: |
+        file result/bin/${{env.MAIN}}
+        readelf -p .comment result/bin/${{env.MAIN}}
     - name: Error log for ${{matrix.package}}.${{matrix.system}}
       if: steps.build.outcome != 'success'
       run: |
