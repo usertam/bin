@@ -1,5 +1,5 @@
 {
-  inputs.nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
+  inputs.nixpkgs.url = "github:usertam/nixpkgs/branch-bcd44e2";
   inputs.systems.url = "github:nix-systems/default";
 
   outputs = { self, nixpkgs, systems }: let
